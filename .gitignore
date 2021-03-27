@@ -1,0 +1,6 @@
+.DS_Store
+.idea
+credentials.json
+token.pickle
+*.pyc
+venv
