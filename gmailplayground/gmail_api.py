@@ -65,6 +65,10 @@ class ApiItemType(Enum):
     THREAD = "thread"
     MESSAGE = "message"
 
+
+class MimeType(Enum):
+    TEXT_PLAIN = "text/plain"
+
 @dataclass
 class MessagePartBody:
     data: str
@@ -102,6 +106,17 @@ class Message:
     date: datetime.datetime
     snippet: str
     payload: MessagePart
+
+    def get_all_message_parts_with_mime_type(self, mime_type: MimeType):
+        all_msg_parts = self.get_all_msg_parts_recursive(self.payload)
+        return list(filter(lambda x: x.mimeType == mime_type.value, all_msg_parts))
+
+    def get_all_msg_parts_recursive(self, msg_part: MessagePart):
+        list = []
+        for part in msg_part.parts:
+            list += self.get_all_msg_parts_recursive(part)
+        list.append(msg_part)
+        return list
 
 
 @dataclass
