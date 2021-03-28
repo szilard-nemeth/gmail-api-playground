@@ -11,6 +11,7 @@ from utils import Decoder
 
 LOG = logging.getLogger(__name__)
 
+
 class HeaderField(Enum):
     NAME = "name"
     VALUE = "value"
@@ -19,6 +20,8 @@ class HeaderField(Enum):
 class ListQueryParam(Enum):
     QUERY = "q"
     USER_ID = "userId"
+    MAX_RESULTS = "maxResults"
+
 
 class GetAttachmentParam(Enum):
     USER_ID = "userId"
@@ -69,11 +72,13 @@ class MessagePartBody:
     attachmentId: str
     encoding_error: bool = False
 
+
 @dataclass
 class MessagePartBodyWithMissingBodyData:
     message_id: str
     attachment_id: str
     message_part_body: MessagePartBody
+
 
 @dataclass
 class Header:
@@ -84,7 +89,7 @@ class Header:
 @dataclass
 class MessagePart:
     id: str
-    mimeType: str
+    mimeType: str #TODO rename
     headers: List[Header]
     body: MessagePartBody
     parts: List[Any] # Cannot refer to MessagePart :(
@@ -182,7 +187,8 @@ class GmailWrapper:
     def _query_attachments_for_missing_message_part_body(self):
         # Fix MessagePartBody object that has attachmentId only
         # Quoting from API doc for Field 'attachmentId':
-        # When present, contains the ID of an external attachment that can be retrieved in a separate messages.attachments.get request.
+        # When present, contains the ID of an external attachment that can be retrieved in a
+        # separate messages.attachments.get request.
         # When not present, the entire content of the message part body is contained in the data field.
         for mpb in self.message_part_bodies_without_body:
             if not mpb.message_id or not mpb.attachment_id:
@@ -219,8 +225,8 @@ class GmailWrapper:
         headers_list: List[Dict[str, str]] = self._get_field(message_part, MessagePartField.HEADERS)
         headers: List[Header] = []
         for header_dict in headers_list:
-             headers.append(Header(self._get_field(header_dict, HeaderField.NAME),
-                                   self._get_field(header_dict, HeaderField.VALUE)))
+            headers.append(Header(self._get_field(header_dict, HeaderField.NAME),
+                                  self._get_field(header_dict, HeaderField.VALUE)))
         return headers
 
     def _parse_message_part_body_obj(self, messagepart_body, message_id: str):
@@ -266,7 +272,8 @@ class GmailWrapper:
                 return header.value
         return None
 
-    def _get_field(self, gmail_api_obj: Dict, field, default_val=None):
+    @staticmethod
+    def _get_field(gmail_api_obj: Dict, field, default_val=None):
         if isinstance(field, Enum):
             if field.value in gmail_api_obj:
                 ret = gmail_api_obj[field.value]
