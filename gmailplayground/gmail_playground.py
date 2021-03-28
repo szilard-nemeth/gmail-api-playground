@@ -1,23 +1,24 @@
 #!/usr/bin/python
 
 import argparse
-import sys
+import datetime
 import logging
 import os
+import sys
+import time
+from dataclasses import field, dataclass
 from enum import Enum
+from logging.handlers import TimedRotatingFileHandler
+from os.path import expanduser
+from typing import List
 
 from pythoncommons.file_utils import FileUtils
 from pythoncommons.google.common import ServiceType
 from pythoncommons.google.google_auth import GoogleApiAuthorizer
 from pythoncommons.google.google_sheet import GSheetOptions, GSheetWrapper
+from pythoncommons.string_utils import RegexUtils
 
-
-from os.path import expanduser
-import datetime
-import time
-from logging.handlers import TimedRotatingFileHandler
-
-from gmail_api import GmailWrapper
+from gmail_api import GmailWrapper, GmailThreads
 
 LOG = logging.getLogger(__name__)
 PROJECT_NAME = "gmail_api_playground"
@@ -117,6 +118,15 @@ class Setup:
         return args
 
 
+@dataclass
+class MatchedLinesFromMessage:
+    message_id: str
+    thread_id: str
+    subject: str
+    date: datetime.datetime
+    lines: List[str] = field(default_factory=list)
+
+
 class GmailPlayground:
     def __init__(self, args):
         self.setup_dirs()
@@ -152,29 +162,75 @@ class GmailPlayground:
 
     def start(self):
         query = "subject:\"YARN Daily unit test report\""
+        limit = 3
 
-        #TODO this produced many errors: query = "YARN Daily branch diff report"
-        threads_list = self.gmail_wrapper.query_threads_with_paging(query=query)
-        # TODO process data
+        # TODO Add these to postprocess config object (including mimetype filtering)
+        line_sep = "\\r\\n"
+        regex = ".*org\\.apache\\.hadoop.*"
+        skip_lines_starting_with = ["Failed testcases:", "FILTER:"]
+        matched_lines: List[MatchedLinesFromMessage] = []
+        # TODO this produced many errors: Uncomment & try again
+        # query = "YARN Daily branch diff report"
 
+        threads: GmailThreads = self.gmail_wrapper.query_threads_with_paging(query=query, limit=limit)
+        # TODO write a generator function to GmailThreads that generates List[GmailMessageBodyPart]
+        for message in threads.messages:
+            msg_parts = message.get_all_plain_text_parts()
+            for msg_part in msg_parts:
+                lines = msg_part.body.split(line_sep)
+                matched_lines_of_msg: List[str] = []
+                for line in lines:
+                    line = line.strip()
+                    # TODO this compiles the pattern over and over again --> Create a new helper function that receives
+                    #  a compiled pattern
+                    if not self._check_if_line_is_valid(line, skip_lines_starting_with):
+                        LOG.warning(f"Skipping line: {line}")
+                        continue
+                    if RegexUtils.ensure_matches_pattern(line, regex):
+                        LOG.debug(f"[PATTERN: {regex}] Matched line: {line}")
+                        matched_lines_of_msg.append(line)
 
-        #TODO save data
-        # self.data: List[List[str]] = DataConverter.convert_data_to_rows(messages_list, truncate=truncate)
-        self.data = threads_list
+                matched_lines.append(MatchedLinesFromMessage(message.msg_id,
+                                                             message.thread_id,
+                                                             message.subject,
+                                                             message.date,
+                                                             matched_lines_of_msg))
+        LOG.info("Matched lines: " + str(matched_lines))
+        self.process_data()
         self.print_results_table()
         if gmail_playground.operation_mode == OperationMode.GSHEET:
             LOG.info("Updating Google sheet with data...")
             self.update_gsheet()
 
+    def process_data(self):
+        pass
+        # TODO save & process data
+        #  TWO SHEETS
+        #  1. Raw data: Non-unique testcase lines
+        #  Headers: Testcase, message_id, thread_id, mail subject, datetime, Date (day only)
+        #  2. Summary data: Non-Unique testcase lines
+        #  Headers: Testcase, Date (day only), frequency of failure
+        # self.data: List[List[str]] = DataConverter.convert_data_to_rows(messages_list, truncate=truncate)
+        # self.data = threads_list
+
+    @staticmethod
+    def _check_if_line_is_valid(line, skip_lines_starting_with):
+        valid_line = True
+        for skip_str in skip_lines_starting_with:
+            if line.startswith(skip_str):
+                valid_line = False
+                break
+        return valid_line
+
     def print_results_table(self):
         if not self.data:
-            raise ValueError("Data is not yet set, please call sync method first!")
+            raise ValueError("Data is not yet set, please call start method first!")
         # result_printer = ResultPrinter(self.data, self.headers)
         # result_printer.print_table()
 
     def update_gsheet(self):
         if not self.data:
-            raise ValueError("Data is not yet set, please call sync method first!")
+            raise ValueError("Data is not yet set, please call start method first!")
         self.gsheet_wrapper.write_data(self.headers, self.data)
 
 
