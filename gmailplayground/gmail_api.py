@@ -127,15 +127,17 @@ class Thread:
 
 
 class Progress:
-    def __init__(self, item_type: ApiItemType):
+    def __init__(self, item_type: ApiItemType, limit: int = None):
         self.requests_count = 0
         self.all_items_count = 0
         self.processed_items = 0
         self.new_items_with_last_request = -1
         self.item_type = item_type
+        self.limit = limit
 
     def _print_status(self):
-        LOG.info(f"[Request #: {self.requests_count}] Received {self.new_items_with_last_request} more {self.item_type.value}s")
+        LOG.info(f"[Request #: {self.requests_count}] "
+                 f"Received {self.new_items_with_last_request} more {self.item_type.value}s")
 
     def incr_requests(self):
         self.requests_count += 1
@@ -149,6 +151,11 @@ class Progress:
     def incr_processed_items(self):
         self.processed_items += 1
 
+    def is_limit_reached(self):
+        if self.limit:
+            return self.processed_items > self.limit
+        return False
+
     def print_processing_items(self):
         LOG.debug(f"Processing {self.item_type.value}s: {self.processed_items} / {self.all_items_count}")
 
@@ -156,6 +163,7 @@ class Progress:
 class GmailWrapper:
     USERID_ME = 'me'
     DEFAULT_API_FIELDS = {ListQueryParam.USER_ID.value: USERID_ME}
+    DEFAULT_PAGE_SIZE = 100
 
     def __init__(self, authorizer: GoogleApiAuthorizer, api_version: str = None):
         self.creds = authorizer.authorize()
@@ -168,14 +176,17 @@ class GmailWrapper:
         self.attachments_svc = self.messages_svc.attachments()
         self.message_part_bodies_without_body: List[MessagePartBodyWithMissingBodyData] = []
 
-    def query_threads_with_paging(self, query: str = None) -> List[Thread]:
+    def query_threads_with_paging(self, query: str = None, limit: int = None,
+                                  sanity_check=True) -> List[Thread]:
         kwargs = self._get_new_kwargs()
         if query:
-            kwargs["q"] = query
+            kwargs[ListQueryParam.QUERY.value] = query
+        if limit < GmailWrapper.DEFAULT_PAGE_SIZE:
+            kwargs[ListQueryParam.MAX_RESULTS.value] = limit
         request = self.threads_svc.list(**kwargs)
 
         threads: List[Thread] = []
-        progress = Progress(ApiItemType.THREAD)
+        progress = Progress(ApiItemType.THREAD, limit=limit)
         self.message_part_bodies_without_body.clear()
         while request is not None:
             response = request.execute()
@@ -186,6 +197,10 @@ class GmailWrapper:
 
                 for idx, thread in enumerate(list_of_threads):
                     progress.incr_processed_items()
+
+                    if progress.is_limit_reached():
+                        LOG.warning("Reached limit, stop processing more items.")
+                        return threads
                     progress.print_processing_items()
                     thread_data = self._query_thread_data(thread)
                     messages_in_thread = self._get_field(thread_data, ThreadField.MESSAGES)
@@ -193,6 +208,9 @@ class GmailWrapper:
                     subject = self._parse_subject_of_message(message_objs[0])
                     thread_obj = Thread(self._get_field(thread_data, ThreadField.ID), subject, message_objs)
                     threads.append(thread_obj)
+
+                    if sanity_check:
+                        self._sanity_check(subject, message_objs)
             request = self.threads_svc.list_next(request, response)
 
         # TODO error log all messages that had base64 encoding errors
@@ -303,4 +321,8 @@ class GmailWrapper:
         kwargs = {}
         kwargs.update(GmailWrapper.DEFAULT_API_FIELDS)
         return kwargs
+
+    def _sanity_check(self, subject, message_objs: List[Message]):
+        #TODO implement checking if all messages have the same subject
+        pass
 
