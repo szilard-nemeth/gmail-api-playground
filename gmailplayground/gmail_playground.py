@@ -3,19 +3,16 @@
 import argparse
 import datetime
 import logging
-import os
 import sys
 import time
 from dataclasses import field, dataclass
 from enum import Enum
 from logging.handlers import TimedRotatingFileHandler
-from os.path import expanduser
 from typing import List
-
-from pythoncommons.file_utils import FileUtils
 from pythoncommons.google.common import ServiceType
 from pythoncommons.google.google_auth import GoogleApiAuthorizer
 from pythoncommons.google.google_sheet import GSheetOptions, GSheetWrapper
+from pythoncommons.project_utils import ProjectUtils
 from pythoncommons.string_utils import RegexUtils
 
 from gmail_api import GmailWrapper, GmailThreads
@@ -32,17 +29,14 @@ class OperationMode(Enum):
 
 class Setup:
     @staticmethod
-    def init_logger(log_dir, console_debug=False):
+    def init_logger(console_debug=False):
         # get root logger
         logger = logging.getLogger()
         logger.setLevel(logging.DEBUG)
 
         # create file handler which logs even debug messages
-        prefix = f"{PROJECT_NAME}-"
-        logfilename = datetime.datetime.now().strftime(prefix + "%Y_%m_%d_%H%M%S.log")
-
-        log_file = FileUtils.join_path(log_dir, logfilename)
-        fh = TimedRotatingFileHandler(log_file, when='midnight')
+        logfilename = ProjectUtils.get_default_log_file(PROJECT_NAME)
+        fh = TimedRotatingFileHandler(logfilename, when='midnight')
         fh.suffix = "%Y_%m_%d.log"
         fh.setLevel(logging.DEBUG)
 
@@ -129,7 +123,7 @@ class MatchedLinesFromMessage:
 
 class GmailPlayground:
     def __init__(self, args):
-        self.setup_dirs()
+        ProjectUtils.get_output_basedir(PROJECT_NAME)
         self.operation_mode = args.operation_mode
         self.validate_operation_mode()
 
@@ -152,13 +146,6 @@ class GmailPlayground:
                              .format(OperationMode.PRINT,
                                      OperationMode.GSHEET,
                                      self.operation_mode))
-
-    def setup_dirs(self):
-        home = expanduser("~")
-        self.project_out_root = os.path.join(home, PROJECT_NAME)
-        self.log_dir = os.path.join(self.project_out_root, 'logs')
-        FileUtils.ensure_dir_created(self.project_out_root)
-        FileUtils.ensure_dir_created(self.log_dir)
 
     def start(self):
         query = "subject:\"YARN Daily unit test report\""
@@ -243,7 +230,7 @@ if __name__ == '__main__':
 
     # Initialize logging
     verbose = True if args.verbose else False
-    Setup.init_logger(gmail_playground.log_dir, console_debug=verbose)
+    Setup.init_logger(console_debug=verbose)
 
     gmail_playground.start()
     end_time = time.time()
