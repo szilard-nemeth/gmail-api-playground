@@ -326,7 +326,7 @@ class GmailWrapper:
         kwargs = self._get_new_kwargs()
         if query:
             kwargs[ListQueryParam.QUERY.value] = query
-        if limit < GmailWrapper.DEFAULT_PAGE_SIZE:
+        if limit and limit < GmailWrapper.DEFAULT_PAGE_SIZE:
             kwargs[ListQueryParam.MAX_RESULTS.value] = limit
         request = self.threads_svc.list(**kwargs)
 

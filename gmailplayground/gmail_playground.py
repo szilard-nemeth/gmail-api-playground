@@ -3,19 +3,22 @@
 import argparse
 import datetime
 import logging
+import copy
 import sys
 import time
 from dataclasses import field, dataclass
 from enum import Enum
 from logging.handlers import TimedRotatingFileHandler
-from typing import List
+from typing import List, Dict
 from pythoncommons.google.common import ServiceType
 from pythoncommons.google.google_auth import GoogleApiAuthorizer
 from pythoncommons.google.google_sheet import GSheetOptions, GSheetWrapper
 from pythoncommons.project_utils import ProjectUtils
-from pythoncommons.string_utils import RegexUtils
+from pythoncommons.string_utils import RegexUtils, ResultPrinter
 
 from gmail_api import GmailWrapper, GmailThreads
+
+DEFAULT_LINE_SEP = "\\r\\n"
 
 LOG = logging.getLogger(__name__)
 PROJECT_NAME = "gmail_api_playground"
@@ -128,12 +131,13 @@ class GmailPlayground:
         self.validate_operation_mode()
 
         if self.operation_mode == OperationMode.GSHEET:
-            self.gsheet_wrapper = GSheetWrapper(args.gsheet_options)
+            self.gsheet_wrapper_normal = GSheetWrapper(args.gsheet_options)
+            gsheet_options = copy.copy(args.gsheet_options)
+            gsheet_options.worksheet = gsheet_options.worksheet + "_aggregated"
+            self.gsheet_wrapper_aggregated = GSheetWrapper(gsheet_options)
 
         self.authorizer = GoogleApiAuthorizer(ServiceType.GMAIL)
         self.gmail_wrapper = GmailWrapper(self.authorizer)
-        self.headers = ['test1', 'test2']
-        self.data = None
 
     def validate_operation_mode(self):
         if self.operation_mode == OperationMode.PRINT:
@@ -149,18 +153,20 @@ class GmailPlayground:
 
     def start(self):
         query = "subject:\"YARN Daily unit test report\""
-        limit = 3
-
         # TODO Add these to postprocess config object (including mimetype filtering)
-        line_sep = "\\r\\n"
-        regex = ".*org\\.apache\\.hadoop.*"
+        regex = ".*org\\.apache\\.hadoop\\.yarn.*"
         skip_lines_starting_with = ["Failed testcases:", "FILTER:"]
-        matched_lines: List[MatchedLinesFromMessage] = []
-        # TODO this produced many errors: Uncomment & try again
-        # query = "YARN Daily branch diff report"
 
-        threads: GmailThreads = self.gmail_wrapper.query_threads_with_paging(query=query, limit=limit)
+        # TODO this query below produced some errors: Uncomment & try again
+        # query = "YARN Daily branch diff report"
+        # threads: GmailThreads = self.gmail_wrapper.query_threads_with_paging(query=query, limit=3)
+        threads: GmailThreads = self.gmail_wrapper.query_threads_with_paging(query=query)
         # TODO write a generator function to GmailThreads that generates List[GmailMessageBodyPart]
+        raw_data = self.filter_data_by_regex_pattern(threads, regex, skip_lines_starting_with)
+        self.process_data(raw_data)
+
+    def filter_data_by_regex_pattern(self, threads, regex, skip_lines_starting_with, line_sep=DEFAULT_LINE_SEP):
+        matched_lines: List[MatchedLinesFromMessage] = []
         for message in threads.messages:
             msg_parts = message.get_all_plain_text_parts()
             for msg_part in msg_parts:
@@ -168,8 +174,7 @@ class GmailPlayground:
                 matched_lines_of_msg: List[str] = []
                 for line in lines:
                     line = line.strip()
-                    # TODO this compiles the pattern over and over again --> Create a new helper function that receives
-                    #  a compiled pattern
+                    # TODO this compiles the pattern over and over again --> Create a new helper function that receives a compiled pattern
                     if not self._check_if_line_is_valid(line, skip_lines_starting_with):
                         LOG.warning(f"Skipping line: {line}")
                         continue
@@ -182,23 +187,21 @@ class GmailPlayground:
                                                              message.subject,
                                                              message.date,
                                                              matched_lines_of_msg))
-        LOG.info("Matched lines: " + str(matched_lines))
-        self.process_data()
-        self.print_results_table()
+        LOG.debug(f"[RAW DATA] Matched lines: {matched_lines}")
+        return matched_lines
+
+    def process_data(self, raw_data: List[MatchedLinesFromMessage]):
+        truncate = self.operation_mode == OperationMode.PRINT
+        header = ["Date", "Subject", "Testcase", "Message ID", "Thread ID"]
+        converted_data: List[List[str]] = DataConverter.convert_data_to_rows(raw_data, truncate=truncate)
+        self.print_results_table(header, converted_data)
+
         if gmail_playground.operation_mode == OperationMode.GSHEET:
             LOG.info("Updating Google sheet with data...")
-            self.update_gsheet()
-
-    def process_data(self):
-        pass
-        # TODO save & process data
-        #  TWO SHEETS
-        #  1. Raw data: Non-unique testcase lines
-        #  Headers: Testcase, message_id, thread_id, mail subject, datetime, Date (day only)
-        #  2. Summary data: Non-Unique testcase lines
-        #  Headers: Testcase, Date (day only), frequency of failure
-        # self.data: List[List[str]] = DataConverter.convert_data_to_rows(messages_list, truncate=truncate)
-        # self.data = threads_list
+            header_aggregated = ["Testcase", "Frequency of failures", "Latest failure"]
+            aggregated_data: List[List[str]] = DataConverter.convert_data_to_aggregated_rows(raw_data)
+            self.update_gsheet(header, converted_data)
+            self.update_gsheet_aggregated(header_aggregated, aggregated_data)
 
     @staticmethod
     def _check_if_line_is_valid(line, skip_lines_starting_with):
@@ -209,16 +212,81 @@ class GmailPlayground:
                 break
         return valid_line
 
-    def print_results_table(self):
-        if not self.data:
-            raise ValueError("Data is not yet set, please call start method first!")
-        # result_printer = ResultPrinter(self.data, self.headers)
-        # result_printer.print_table()
+    @staticmethod
+    def print_results_table(header, data):
+        result_printer = ResultPrinter(data, header)
+        result_printer.print_table()
 
-    def update_gsheet(self):
-        if not self.data:
-            raise ValueError("Data is not yet set, please call start method first!")
-        self.gsheet_wrapper.write_data(self.headers, self.data)
+    def update_gsheet(self, header, data):
+        self.gsheet_wrapper_normal.write_data(header, data, clear_range=False)
+
+    def update_gsheet_aggregated(self, header, data):
+        self.gsheet_wrapper_aggregated.write_data(header, data, clear_range=False)
+
+
+class DataConverter:
+    SUBJECT_MAX_LENGTH = 50
+    LINE_MAX_LENGTH = 80
+
+    @staticmethod
+    def convert_data_to_rows(raw_data: List[MatchedLinesFromMessage], truncate: bool = False) -> List[List[str]]:
+        converted_data: List[List[str]] = []
+        truncate_subject: bool = truncate
+        truncate_lines: bool = truncate
+
+        for matched_lines in raw_data:
+            for testcase_name in matched_lines.lines:
+                subject = matched_lines.subject
+                if truncate_subject and len(matched_lines.subject) > DataConverter.SUBJECT_MAX_LENGTH:
+                    subject = DataConverter._truncate_str(matched_lines.subject, DataConverter.SUBJECT_MAX_LENGTH, "subject")
+                if truncate_lines:
+                    testcase_name = DataConverter._truncate_str(testcase_name, DataConverter.LINE_MAX_LENGTH, "testcase")
+                row: List[str] = [str(matched_lines.date), subject, testcase_name,
+                                  matched_lines.message_id, matched_lines.thread_id]
+                converted_data.append(row)
+        return converted_data
+
+    @staticmethod
+    def convert_data_to_aggregated_rows(raw_data: List[MatchedLinesFromMessage]) -> List[List[str]]:
+        failure_freq: Dict[str, int] = {}
+        latest_failure: Dict[str, datetime.datetime] = {}
+        for matched_lines in raw_data:
+            for testcase_name in matched_lines.lines:
+                if testcase_name not in failure_freq:
+                    failure_freq[testcase_name] = 1
+                    latest_failure[testcase_name] = matched_lines.date
+                else:
+                    failure_freq[testcase_name] = failure_freq[testcase_name] + 1
+                    if latest_failure[testcase_name] < matched_lines.date:
+                        latest_failure[testcase_name] = matched_lines.date
+
+        converted_data: List[List[str]] = []
+        for tc, freq in failure_freq.items():
+            last_failed = latest_failure[tc]
+            row: List[str] = [tc, freq, str(last_failed)]
+            converted_data.append(row)
+        return converted_data
+
+    @staticmethod
+    def _truncate_str(value: str, max_len: int, field_name: str):
+        orig_value = value
+        truncated = value[0:max_len] + "..."
+        LOG.debug(f"Truncated {field_name}: "
+                  f"Original value: '{orig_value}', "
+                  f"Original length: {len(orig_value)}, "
+                  f"New value (truncated): {truncated}, "
+                  f"New length: {max_len}")
+        return truncated
+
+    @staticmethod
+    def _truncate_date(date):
+        original_date = date
+        date_obj = datetime.datetime.strptime(date, '%Y-%m-%dT%H:%M:%S.%fZ')
+        truncated = date_obj.strftime("%Y-%m-%d")
+        LOG.debug(f"Truncated date. "
+                  f"Original value: {original_date},"
+                  f"New value (truncated): {truncated}")
+        return truncated
 
 
 if __name__ == '__main__':
