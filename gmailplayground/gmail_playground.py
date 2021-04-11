@@ -152,6 +152,9 @@ class GmailPlayground:
                                      self.operation_mode))
 
     def start(self):
+        # TODO Query mapreduce failures to separate sheet
+        # TODO implement caching of emails in json files
+        # TODO Split by [] --> Example: org.apache.hadoop.yarn.util.resource.TestResourceCalculator.testDivisionByZeroRatioNumeratorAndDenominatorIsZero[1]
         query = "subject:\"YARN Daily unit test report\""
         # TODO Add these to postprocess config object (including mimetype filtering)
         regex = ".*org\\.apache\\.hadoop\\.yarn.*"
