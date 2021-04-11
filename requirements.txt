@@ -6,6 +6,6 @@ gspread
 oauth2client
 tabulate
 humanize
-git+ssh://git@github.com/szilard-nemeth/python-commons.git
+git+https://github.com/szilard-nemeth/python-commons.git
 httplib2
 uritemplate
