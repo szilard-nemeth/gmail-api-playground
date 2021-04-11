@@ -1,8 +1,6 @@
 import base64
 import logging
 
-from tabulate import tabulate
-
 LOG = logging.getLogger(__name__)
 
 
