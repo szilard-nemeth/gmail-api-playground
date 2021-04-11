@@ -14,7 +14,8 @@ from pythoncommons.google.common import ServiceType
 from pythoncommons.google.google_auth import GoogleApiAuthorizer
 from pythoncommons.google.google_sheet import GSheetOptions, GSheetWrapper
 from pythoncommons.project_utils import ProjectUtils
-from pythoncommons.string_utils import RegexUtils, ResultPrinter
+from pythoncommons.result_printer import BasicResultPrinter
+from pythoncommons.string_utils import RegexUtils
 
 from gmail_api import GmailWrapper, GmailThreads
 
@@ -217,8 +218,7 @@ class GmailPlayground:
 
     @staticmethod
     def print_results_table(header, data):
-        result_printer = ResultPrinter(data, header)
-        result_printer.print_table()
+        BasicResultPrinter.print_table(data, header)
 
     def update_gsheet(self, header, data):
         self.gsheet_wrapper_normal.write_data(header, data, clear_range=False)
