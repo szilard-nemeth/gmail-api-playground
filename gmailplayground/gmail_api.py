@@ -7,7 +7,7 @@ from enum import Enum
 from typing import List, Dict, Any
 
 from googleapiclient.discovery import build
-from pythoncommons.google.google_auth import GoogleApiAuthorizer
+from googleapiwrapper.google_auth import GoogleApiAuthorizer
 from pythoncommons.string_utils import auto_str
 
 from utils import Decoder

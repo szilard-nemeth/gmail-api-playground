@@ -10,9 +10,10 @@ from dataclasses import field, dataclass
 from enum import Enum
 from logging.handlers import TimedRotatingFileHandler
 from typing import List, Dict
-from pythoncommons.google.common import ServiceType
-from pythoncommons.google.google_auth import GoogleApiAuthorizer
-from pythoncommons.google.google_sheet import GSheetOptions, GSheetWrapper
+
+from googleapiwrapper.common import ServiceType
+from googleapiwrapper.google_auth import GoogleApiAuthorizer
+from googleapiwrapper.google_sheet import GSheetOptions, GSheetWrapper
 from pythoncommons.project_utils import ProjectUtils
 from pythoncommons.result_printer import BasicResultPrinter
 from pythoncommons.string_utils import RegexUtils
@@ -24,6 +25,9 @@ DEFAULT_LINE_SEP = "\\r\\n"
 LOG = logging.getLogger(__name__)
 PROJECT_NAME = "gmail_api_playground"
 __author__ = 'Szilard Nemeth'
+
+# REQ_LIMIT = 1000
+REQ_LIMIT = 1
 
 
 class OperationMode(Enum):
@@ -163,8 +167,7 @@ class GmailPlayground:
 
         # TODO this query below produced some errors: Uncomment & try again
         # query = "YARN Daily branch diff report"
-        # threads: GmailThreads = self.gmail_wrapper.query_threads_with_paging(query=query, limit=3)
-        threads: GmailThreads = self.gmail_wrapper.query_threads_with_paging(query=query)
+        threads: GmailThreads = self.gmail_wrapper.query_threads_with_paging(query=query, limit=REQ_LIMIT)
         # TODO write a generator function to GmailThreads that generates List[GmailMessageBodyPart]
         raw_data = self.filter_data_by_regex_pattern(threads, regex, skip_lines_starting_with)
         self.process_data(raw_data)

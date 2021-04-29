@@ -7,5 +7,6 @@ oauth2client
 tabulate
 humanize
 git+https://github.com/szilard-nemeth/python-commons.git
+git+https://github.com/szilard-nemeth/google-api-wrapper.git
 httplib2
 uritemplate
