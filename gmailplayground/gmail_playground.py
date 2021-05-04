@@ -156,19 +156,11 @@ class GmailPlayground:
                                      self.operation_mode))
 
     def start(self):
-        # TODO Query mapreduce failures to separate sheet
-        # TODO implement caching of emails in json files
-        # TODO Split by [] --> Example: org.apache.hadoop.yarn.util.resource.TestResourceCalculator.testDivisionByZeroRatioNumeratorAndDenominatorIsZero[1]
-        query = "subject:\"YARN Daily unit test report\""
-        # TODO Add these to postprocess config object (including mimetype filtering)
-        regex = ".*org\\.apache\\.hadoop\\.yarn.*"
-        skip_lines_starting_with = ["Failed testcases:", "FILTER:"]
-
-        # TODO this query below produced some errors: Uncomment & try again
-        # query = "YARN Daily branch diff report"
+        query = "some query"
+        content_filter_regex = "some regex"
+        skip_lines_starting_with = ["Dummy:", "Dummy2"]
         threads: GmailThreads = self.gmail_wrapper.query_threads_with_paging(query=query, limit=REQ_LIMIT)
-        # TODO write a generator function to GmailThreads that generates List[GmailMessageBodyPart]
-        raw_data = self.filter_data_by_regex_pattern(threads, regex, skip_lines_starting_with)
+        raw_data = self.filter_data_by_regex_pattern(threads, content_filter_regex, skip_lines_starting_with)
         self.process_data(raw_data)
 
     def filter_data_by_regex_pattern(self, threads, regex, skip_lines_starting_with, line_sep=DEFAULT_LINE_SEP):
@@ -180,7 +172,6 @@ class GmailPlayground:
                 matched_lines_of_msg: List[str] = []
                 for line in lines:
                     line = line.strip()
-                    # TODO this compiles the pattern over and over again --> Create a new helper function that receives a compiled pattern
                     if not self._check_if_line_is_valid(line, skip_lines_starting_with):
                         LOG.warning(f"Skipping line: {line}")
                         continue
@@ -198,7 +189,7 @@ class GmailPlayground:
 
     def process_data(self, raw_data: List[MatchedLinesFromMessage]):
         truncate = self.operation_mode == OperationMode.PRINT
-        header = ["Date", "Subject", "Testcase", "Message ID", "Thread ID"]
+        header = ["Date", "Subject", "Lines", "Message ID", "Thread ID"]
         converted_data: List[List[str]] = DataConverter.convert_data_to_rows(raw_data, truncate=truncate)
         self.print_results_table(header, converted_data)
 
@@ -240,13 +231,13 @@ class DataConverter:
         truncate_lines: bool = truncate
 
         for matched_lines in raw_data:
-            for testcase_name in matched_lines.lines:
+            for lines in matched_lines.lines:
                 subject = matched_lines.subject
                 if truncate_subject and len(matched_lines.subject) > DataConverter.SUBJECT_MAX_LENGTH:
                     subject = DataConverter._truncate_str(matched_lines.subject, DataConverter.SUBJECT_MAX_LENGTH, "subject")
                 if truncate_lines:
-                    testcase_name = DataConverter._truncate_str(testcase_name, DataConverter.LINE_MAX_LENGTH, "testcase")
-                row: List[str] = [str(matched_lines.date), subject, testcase_name,
+                    lines = DataConverter._truncate_str(lines, DataConverter.LINE_MAX_LENGTH, "testcase")
+                row: List[str] = [str(matched_lines.date), subject, lines,
                                   matched_lines.message_id, matched_lines.thread_id]
                 converted_data.append(row)
         return converted_data
