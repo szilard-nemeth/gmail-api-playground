@@ -12,13 +12,12 @@ from logging.handlers import TimedRotatingFileHandler
 from typing import List, Dict
 
 from googleapiwrapper.common import ServiceType
+from googleapiwrapper.gmail_api import GmailWrapper, GmailThreads
 from googleapiwrapper.google_auth import GoogleApiAuthorizer
 from googleapiwrapper.google_sheet import GSheetOptions, GSheetWrapper
 from pythoncommons.project_utils import ProjectUtils
 from pythoncommons.result_printer import BasicResultPrinter
 from pythoncommons.string_utils import RegexUtils
-
-from gmail_api import GmailWrapper, GmailThreads
 
 DEFAULT_LINE_SEP = "\\r\\n"
 
