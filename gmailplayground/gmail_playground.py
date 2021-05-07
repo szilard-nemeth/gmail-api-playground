@@ -9,12 +9,14 @@ import time
 from dataclasses import field, dataclass
 from enum import Enum
 from logging.handlers import TimedRotatingFileHandler
+from os.path import expanduser
 from typing import List, Dict
 
 from googleapiwrapper.common import ServiceType
 from googleapiwrapper.gmail_api import GmailWrapper, GmailThreads
 from googleapiwrapper.google_auth import GoogleApiAuthorizer
 from googleapiwrapper.google_sheet import GSheetOptions, GSheetWrapper
+from pythoncommons.file_utils import FileUtils
 from pythoncommons.project_utils import ProjectUtils
 from pythoncommons.result_printer import BasicResultPrinter
 from pythoncommons.string_utils import RegexUtils
@@ -26,8 +28,9 @@ PROJECT_NAME = "gmail_api_playground"
 __author__ = 'Szilard Nemeth'
 
 # REQ_LIMIT = 1000
-REQ_LIMIT = 1
-
+REQ_LIMIT = 10
+SECRET_PROJECTS_DIR = FileUtils.join_path(expanduser("~"), ".secret", "projects", "cloudera")
+UNIT_TEST_RESULT_AGGREGATOR = "unit-test-result-aggregator"
 
 class OperationMode(Enum):
     GSHEET = "GSHEET"
@@ -130,7 +133,7 @@ class MatchedLinesFromMessage:
 
 class GmailPlayground:
     def __init__(self, args):
-        ProjectUtils.get_output_basedir(PROJECT_NAME)
+        output_basedir = ProjectUtils.get_output_basedir(PROJECT_NAME)
         self.operation_mode = args.operation_mode
         self.validate_operation_mode()
 
@@ -140,8 +143,13 @@ class GmailPlayground:
             gsheet_options.worksheet = gsheet_options.worksheet + "_aggregated"
             self.gsheet_wrapper_aggregated = GSheetWrapper(gsheet_options)
 
-        self.authorizer = GoogleApiAuthorizer(ServiceType.GMAIL)
-        self.gmail_wrapper = GmailWrapper(self.authorizer)
+        # Reuse UNIT_TEST_RESULT_AGGREGATOR's project name as we need the same credentials
+        self.authorizer = GoogleApiAuthorizer(ServiceType.GMAIL,
+                                              project_name=f"{UNIT_TEST_RESULT_AGGREGATOR}",
+                                              secret_basedir=SECRET_PROJECTS_DIR,
+                                              account_email="snemeth@cloudera.com"
+                                              )
+        self.gmail_wrapper = GmailWrapper(self.authorizer, output_basedir=output_basedir)
 
     def validate_operation_mode(self):
         if self.operation_mode == OperationMode.PRINT:
