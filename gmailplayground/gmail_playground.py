@@ -101,7 +101,6 @@ class Setup:
         args = parser.parse_args()
         print("Args: " + str(args))
 
-        # TODO check existence + readability of secret file!!
         if args.gsheet and (args.gsheet_client_secret is None or
                             args.gsheet_spreadsheet is None or
                             args.gsheet_worksheet is None):
